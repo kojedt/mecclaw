@@ -74,6 +74,15 @@ function replaceDirAtomically(targetPath, sourcePath) {
   assertPathIsNotSymlink(targetPath, "replace runtime deps");
   const targetParentDir = path.dirname(targetPath);
   fs.mkdirSync(targetParentDir, { recursive: true });
+
+  // Windows does not support atomic directory rename (EPERM); fall back to copy + delete.
+  if (process.platform === "win32") {
+    removePathIfExists(targetPath);
+    fs.cpSync(sourcePath, targetPath, { recursive: true });
+    removePathIfExists(sourcePath);
+    return;
+  }
+
   const backupPath = makeTempDir(
     targetParentDir,
     `.openclaw-runtime-deps-backup-${sanitizeTempPrefixSegment(path.basename(targetPath))}-`,

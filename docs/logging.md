@@ -1,13 +1,14 @@
 ---
 summary: "File logs, console output, CLI tailing, and the Control UI Logs tab"
 read_when:
-  - You need a beginner-friendly overview of OpenClaw logging
+  - You need a beginner-friendly overview of MecClaw logging
   - You want to configure log levels, formats, or redaction
   - You are troubleshooting and need to find logs quickly
+  - You want to route industrial alerts (sensor faults, e-stops, anomalies) to LINE or Telegram
 title: "Logging"
 ---
 
-OpenClaw has two main log surfaces:
+MecClaw has two main log surfaces:
 
 - **File logs** (JSON lines) written by the Gateway.
 - **Console output** shown in terminals and the Gateway Debug UI.
@@ -19,7 +20,7 @@ logs live, how to read them, and how to configure log levels and formats.
 
 By default, the Gateway writes a rolling log file under:
 
-`/tmp/openclaw/openclaw-YYYY-MM-DD.log`
+`/tmp/mecclaw/mecclaw-YYYY-MM-DD.log`
 
 The date uses the gateway host's local timezone.
 
@@ -28,12 +29,12 @@ OpenClaw keeps up to five numbered archives beside the active file, such as
 `openclaw-YYYY-MM-DD.1.log`, and keeps writing to a fresh active log instead of
 suppressing diagnostics.
 
-You can override this in `~/.openclaw/openclaw.json`:
+You can override this in `~/.mecclaw/mecclaw.json`:
 
 ```json
 {
   "logging": {
-    "file": "/path/to/openclaw.log"
+    "file": "/path/to/mecclaw.log"
   }
 }
 ```
@@ -45,7 +46,7 @@ You can override this in `~/.openclaw/openclaw.json`:
 Use the CLI to tail the gateway log file via RPC:
 
 ```bash
-openclaw logs --follow
+mecclaw logs --follow
 ```
 
 Useful current options:
@@ -93,7 +94,7 @@ See [/web/control-ui](/web/control-ui) for how to open it.
 To filter channel activity (WhatsApp/Telegram/etc), use:
 
 ```bash
-openclaw channels logs --channel whatsapp
+mecclaw channels logs --channel whatsapp
 ```
 
 ## Log formats
@@ -132,7 +133,7 @@ openclaw gateway --verbose --ws-log full
 
 ## Configuring logging
 
-All logging configuration lives under `logging` in `~/.openclaw/openclaw.json`.
+All logging configuration lives under `logging` in `~/.mecclaw/mecclaw.json`.
 
 ```json
 {
@@ -152,7 +153,7 @@ All logging configuration lives under `logging` in `~/.openclaw/openclaw.json`.
 - `logging.level`: **file logs** (JSONL) level.
 - `logging.consoleLevel`: **console** verbosity level.
 
-You can override both via the **`OPENCLAW_LOG_LEVEL`** environment variable (e.g. `OPENCLAW_LOG_LEVEL=debug`). The env var takes precedence over the config file, so you can raise verbosity for a single run without editing `openclaw.json`. You can also pass the global CLI option **`--log-level <level>`** (for example, `openclaw --log-level debug gateway run`), which overrides the environment variable for that command.
+You can override both via the **`MECCLAW_LOG_LEVEL`** environment variable (e.g. `MECCLAW_LOG_LEVEL=debug`). The env var takes precedence over the config file, so you can raise verbosity for a single run without editing `openclaw.json`. You can also pass the global CLI option **`--log-level <level>`** (for example, `mecclaw --log-level debug gateway run`), which overrides the environment variable for that command.
 
 `--verbose` only affects console output and WS log verbosity; it does not change
 file log levels.
@@ -193,7 +194,7 @@ Two adjacent surfaces:
 - **Diagnostics flags** — targeted debug-log flags that route extra logs to
   `logging.file` without raising `logging.level`. Flags are case-insensitive
   and support wildcards (`telegram.*`, `*`). Configure under `diagnostics.flags`
-  or via the `OPENCLAW_DIAGNOSTICS=...` env override. Full guide:
+  or via the `MECCLAW_DIAGNOSTICS=...` env override. Full guide:
   [Diagnostics flags](/diagnostics/flags).
 
 To enable diagnostics events for plugins or custom sinks without OTLP export:
@@ -208,10 +209,111 @@ For OTLP export to a collector, see [OpenTelemetry export](/gateway/opentelemetr
 
 ## Troubleshooting tips
 
-- **Gateway not reachable?** Run `openclaw doctor` first.
+- **Gateway not reachable?** Run `mecclaw doctor` first.
 - **Logs empty?** Check that the Gateway is running and writing to the file path
   in `logging.file`.
 - **Need more detail?** Set `logging.level` to `debug` or `trace` and retry.
+
+## Industrial logging — MecClaw
+
+MecClaw operates in factory, SCADA, IoT, and energy environments where logs carry
+operational weight. This section covers how to configure logging for industrial use
+and how to route critical events to LINE and Telegram.
+
+### Recommended config for factory environments
+
+```json
+{
+  "logging": {
+    "level": "warn",
+    "consoleLevel": "info",
+    "consoleStyle": "compact",
+    "file": "/var/log/mecclaw/mecclaw.log",
+    "maxFileBytes": 52428800,
+    "redactSensitive": "tools"
+  },
+  "diagnostics": {
+    "enabled": true,
+    "flags": ["line.*", "telegram.*", "gateway/channels/*"]
+  }
+}
+```
+
+- `level: "warn"` — file logs only capture warnings and errors in steady state; avoids log bloat on high-frequency sensor traffic.
+- `consoleStyle: "compact"` — tighter output for small operator terminals and HMI screens.
+- `maxFileBytes: 52428800` — 50 MB rotation keeps disk usage predictable on embedded or edge-mounted hosts.
+- Diagnostics flags for `line.*` and `telegram.*` — route extra channel-level debug events to file without raising the global level.
+
+### Routing alerts to LINE and Telegram
+
+MecClaw can push structured log events to LINE or Telegram as operational alerts.
+Set up the channels first: [LINE & Telegram setup](/channels/mecclaw-line-telegram).
+
+Filter channel-specific activity:
+
+```bash
+mecclaw channels logs --channel line
+mecclaw channels logs --channel telegram
+```
+
+For real-time alert tailing from a control room terminal:
+
+```bash
+mecclaw logs --follow --plain
+```
+
+### Industrial event severity mapping
+
+| MecClaw log level | Industrial meaning | Recommended action |
+|---|---|---|
+| `error` | Equipment fault, communication loss, safety interlock trip | Alert immediately via Telegram/LINE |
+| `warn` | Sensor reading outside normal envelope, degraded mode | Log to file + periodic LINE summary |
+| `info` | Normal operational events, shift changeover, connection status | File log only |
+| `debug` | Detailed protocol traffic, message parsing, polling intervals | Enable only for active troubleshooting |
+| `trace` | Raw byte-level I/O, internal state transitions | Never in production |
+
+Set severity routing per channel using `MECCLAW_LOG_LEVEL` per process, or use the `diagnostics.flags` wildcard to target specific subsystems:
+
+```bash
+# Raise verbosity only for LINE channel during debugging
+MECCLAW_DIAGNOSTICS=line.* mecclaw gateway
+```
+
+### Log retention for compliance
+
+Some industrial sites (IEC 62443, ISO 50001, OSHA) require log retention of 30–90 days.
+MecClaw keeps up to five rolling archives by default. For longer retention, pipe JSONL output to an external log manager:
+
+```bash
+mecclaw logs --json | tee -a /mnt/nas/mecclaw-audit.jsonl
+```
+
+Or use the [OpenTelemetry export](/gateway/opentelemetry) to forward logs to a SIEM or historian (Grafana Loki, Splunk, OSIsoft PI, etc.).
+
+### Sensor anomaly log pattern
+
+When a sensor anomaly is detected and reported via LINE or Telegram, MecClaw emits a structured log entry:
+
+```json
+{
+  "level": "warn",
+  "subsystem": "gateway/channels/telegram",
+  "msg": "alert dispatched",
+  "alert": {
+    "type": "sensor_anomaly",
+    "asset": "COMPRESSOR-04",
+    "tag": "VIBRATION_X",
+    "value": 14.7,
+    "unit": "mm/s",
+    "threshold": 10.0,
+    "severity": "warn"
+  },
+  "channel": "telegram",
+  "ts": "2026-04-26T03:17:44.201Z"
+}
+```
+
+Use `mecclaw logs --json | jq 'select(.alert)'` to extract only alert events from the log stream.
 
 ## Related
 
@@ -219,3 +321,4 @@ For OTLP export to a collector, see [OpenTelemetry export](/gateway/opentelemetr
 - [Diagnostics flags](/diagnostics/flags) — targeted debug-log flags
 - [Gateway logging internals](/gateway/logging) — WS log styles, subsystem prefixes, and console capture
 - [Configuration reference](/gateway/configuration-reference#diagnostics) — full `diagnostics.*` field reference
+- [LINE & Telegram alert setup](/channels/mecclaw-line-telegram) — industrial alert channel configuration

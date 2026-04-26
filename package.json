@@ -1,19 +1,20 @@
 {
-  "name": "openclaw",
+  "name": "mecclaw",
   "version": "2026.4.26",
-  "description": "Multi-channel AI gateway with extensible messaging integrations",
-  "keywords": [],
-  "homepage": "https://github.com/openclaw/openclaw#readme",
+  "description": "Industrial AI agent for factory, IoT, MQTT, SCADA & energy — safety-first, accuracy-driven",
+  "keywords": ["industrial", "iot", "mqtt", "scada", "factory", "ai", "agent", "predictive-maintenance", "energy"],
+  "homepage": "https://github.com/mecclaw/mecclaw#readme",
   "bugs": {
-    "url": "https://github.com/openclaw/openclaw/issues"
+    "url": "https://github.com/mecclaw/mecclaw/issues"
   },
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openclaw/openclaw.git"
+    "url": "git+https://github.com/mecclaw/mecclaw.git"
   },
   "bin": {
+    "mecclaw": "openclaw.mjs",
     "openclaw": "openclaw.mjs"
   },
   "directories": {
